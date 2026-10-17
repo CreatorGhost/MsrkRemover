@@ -1,0 +1,37 @@
+[project]
+name = "unmark"
+version = "0.2.0"
+description = "Local visible-watermark/logo remover for videos you own (NVIDIA CUDA, Apple Silicon, or CPU)"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "torch>=2.5",
+    "numpy",
+    "opencv-python-headless",
+    "pyyaml",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+]
+
+[project.scripts]
+unmark = "unmark.cli:main"
+unmark-ui = "unmark.ui:main"
+
+[dependency-groups]
+dev = ["pytest", "httpx"]
+
+# macOS gets the PyPI build (MPS). Windows/Linux get the CUDA 13.0 build (RTX 20xx-50xx, driver >= 580).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = ["tests"]

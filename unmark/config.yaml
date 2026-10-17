@@ -1,0 +1,13 @@
+# Override with UNMARK_CONFIG=/path/to/your.yaml (keys merge over these).
+dilate_px: 8          # grow mask to swallow anti-aliased/shadow edges (6-10)
+feather_px: 6         # soft edge when pasting inpainted crop back
+crop_pad: 64          # context around the mask union fed to the inpainter
+lama_max_side: 512    # inpaint larger crops downscaled to this (speed); 0 = full res
+batch: 8              # frames per LaMa forward pass
+static_samples: 24    # frames sampled for static-overlay detection
+smooth: 0.4           # fast mode: blend weight of previous frame's fill (anti-flicker)
+smooth_max_motion: 6  # only smooth when the area around the mask is this still (mean abs diff)
+preview_seconds: 5
+out_dir: auto         # auto = ~/Movies/Unmark on macOS, ~/Videos/Unmark elsewhere
+device: auto          # auto | cuda | mps | cpu
+encoder: auto         # auto | h264_nvenc | h264_videotoolbox | libx264 | ...
