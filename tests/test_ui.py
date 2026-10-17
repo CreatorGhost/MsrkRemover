@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from synth import write
 from unmark.ui import app
 
-c = TestClient(app)
+c = TestClient(app, base_url="http://127.0.0.1")
 
 
 def wait(jid, busy):
@@ -21,6 +21,11 @@ def test_upload_detect_render_cancel(tmp_path):
     assert c.post("/api/upload", files={"file": ("x.txt", b"hi")}).status_code == 400
     assert c.post("/api/upload", files={"file": ("x.mp4", b"not a video")}).status_code == 400
     assert c.get("/api/jobs/nope").status_code == 404
+    assert c.get("/api/system", headers={"host": "evil.example"}).status_code == 403  # DNS rebinding
+    assert c.post("/api/upload", headers={"origin": "https://evil.example"},
+                  files={"file": ("x.mp4", b"")}).status_code == 403  # CSRF
+    concat = f"ffconcat version 1.0\nfile '{tmp_path / 'in.mp4'}'\n".encode()
+    assert c.post("/api/upload", files={"file": ("x.mp4", concat)}).status_code == 400  # demuxer abuse
 
     write(tmp_path / "in.mp4")
     s = c.post("/api/upload", files={"file": ("my clip.mp4", (tmp_path / "in.mp4").read_bytes())}).json()

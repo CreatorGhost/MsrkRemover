@@ -8,11 +8,12 @@ import uuid
 import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from .. import hw, log
@@ -53,6 +54,19 @@ class Job:
 
 jobs: dict[str, Job] = {}
 app = FastAPI(title="Unmark")
+allowed_hosts = {"127.0.0.1", "localhost"}  # main() adds the --host value; "*" when shared on the LAN
+
+
+@app.middleware("http")
+async def same_origin_only(request: Request, call_next):
+    """Block DNS rebinding (unexpected Host) and CSRF from other sites (foreign Origin on POST)."""
+    host = request.headers.get("host", "").rsplit(":", 1)[0].strip("[]")
+    if "*" not in allowed_hosts and host not in allowed_hosts:
+        return JSONResponse({"detail": "Host not allowed"}, 403)
+    origin = request.headers.get("origin")
+    if request.method != "GET" and origin and urlsplit(origin).netloc != request.headers.get("host"):
+        return JSONResponse({"detail": "Cross-site request blocked"}, 403)
+    return await call_next(request)
 
 
 def get(job_id: str) -> Job:
@@ -196,9 +210,8 @@ def render(job_id: str, req: RenderRequest):
         dst = j.dir / "preview.mp4"
     else:
         cfg["out_dir"].mkdir(parents=True, exist_ok=True)
-        dst = cfg["out_dir"] / f"{j.name}_unmarked.mp4"
-        if dst.exists():
-            dst = dst.with_name(f"{j.name}_unmarked_{j.id[:6]}.mp4")
+        # Job id in the name: two jobs can never write (or cancel-delete) the same file.
+        dst = cfg["out_dir"] / f"{j.name}_unmarked_{j.id[:6]}.mp4"
     j.cancel.clear()
     j.state, j.error, j.output = "queued", "", None
     j.done, j.total, j.download, j.started, j.t_first, j.finished = 0, 0, 0.0, 0.0, 0.0, 0.0
@@ -252,6 +265,7 @@ def main():
     a = ap.parse_args()
     _cleanup()
     log.info("Device: %s (%s), encoder: %s", hw.device_name(), hw.device(), hw.encoder("h264"))
+    allowed_hosts.add("*" if a.host in ("0.0.0.0", "::") else a.host)
     if a.host not in ("127.0.0.1", "localhost"):
         log.warning("Listening on %s: anyone on your network can upload videos to this machine.", a.host)
     url = f"http://127.0.0.1:{a.port}"

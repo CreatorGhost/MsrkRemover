@@ -8,6 +8,10 @@ import numpy as np
 
 from ..hw import encoder, encoder_args
 
+# Inputs may be untrusted uploads: only real containers from local files, so a renamed
+# playlist/concat file can't make ffmpeg read other files or fetch URLs.
+SAFE_IN = ["-format_whitelist", "mov,matroska,webm,avi", "-protocol_whitelist", "file,pipe"]
+
 # ffprobe colorspace -> swscale matrix name, so RGB->YUV uses the source's matrix.
 _MATRIX = {"bt709": "bt709", "smpte170m": "bt601", "bt470bg": "bt601", "bt2020nc": "bt2020"}
 
@@ -29,7 +33,7 @@ class VideoInfo:
 
 
 def probe(path) -> VideoInfo:
-    out = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json", "-show_streams",
+    out = subprocess.run(["ffprobe", "-v", "error", *SAFE_IN, "-print_format", "json", "-show_streams",
                           "-show_format", str(path)], capture_output=True, text=True, check=True).stdout
     info = json.loads(out)
     v = next(s for s in info["streams"] if s["codec_type"] == "video")
@@ -56,7 +60,7 @@ def probe(path) -> VideoInfo:
 
 def read_frames(path, info: VideoInfo, start: float = 0, duration: float | None = None):
     """Yield HxWx3 uint8 RGB frames, one at a time."""
-    cmd = ["ffmpeg", "-v", "error", "-ss", str(start), "-i", str(path)]
+    cmd = ["ffmpeg", "-v", "error", "-ss", str(start), *SAFE_IN, "-i", str(path)]
     if duration:
         cmd += ["-t", str(duration)]
     cmd += ["-map", "0:v:0", "-r", info.fps, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
@@ -71,7 +75,7 @@ def read_frames(path, info: VideoInfo, start: float = 0, duration: float | None 
 
 def grab(path, t: float) -> np.ndarray:
     """Single RGB frame at time t (fast input seek)."""
-    out = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1",
+    out = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), *SAFE_IN, "-i", str(path), "-frames:v", "1",
                           "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True, check=True).stdout
     import cv2
     return cv2.cvtColor(cv2.imdecode(np.frombuffer(out, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
@@ -85,7 +89,7 @@ class Writer:
         cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                "-s", f"{info.width}x{info.height}", "-r", info.fps, "-i", "-"]
         if info.has_audio:
-            cmd += ["-ss", str(start)] + (["-t", str(duration)] if duration else []) + ["-i", str(src)]
+            cmd += ["-ss", str(start)] + (["-t", str(duration)] if duration else []) + [*SAFE_IN, "-i", str(src)]
             cmd += ["-map", "0:v", "-map", "1:a", "-c:a", "copy", "-shortest"]
         if m := _MATRIX.get(info.color.get("color_space")):
             cmd += ["-vf", f"scale=out_color_matrix={m}"]
