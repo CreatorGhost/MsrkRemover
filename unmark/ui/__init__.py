@@ -2,6 +2,7 @@
 import argparse
 import re
 import shutil
+import socket
 import threading
 import time
 import uuid
@@ -54,14 +55,21 @@ class Job:
 
 jobs: dict[str, Job] = {}
 app = FastAPI(title="Unmark")
-allowed_hosts = {"127.0.0.1", "localhost"}  # main() adds the --host value; "*" when shared on the LAN
+allowed_hosts = {"127.0.0.1", "localhost"}  # --lan adds this machine's Wi-Fi IP and .local name
+
+
+def lan_ip() -> str:
+    """This machine's address on the local network (UDP connect sends no packets)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("10.255.255.255", 1))
+        return s.getsockname()[0]
 
 
 @app.middleware("http")
 async def same_origin_only(request: Request, call_next):
     """Block DNS rebinding (unexpected Host) and CSRF from other sites (foreign Origin on POST)."""
-    host = request.headers.get("host", "").rsplit(":", 1)[0].strip("[]")
-    if "*" not in allowed_hosts and host not in allowed_hosts:
+    host = request.headers.get("host", "").rsplit(":", 1)[0].strip("[]").lower()
+    if host not in allowed_hosts:
         return JSONResponse({"detail": "Host not allowed"}, 403)
     origin = request.headers.get("origin")
     if request.method != "GET" and origin and urlsplit(origin).netloc != request.headers.get("host"):
@@ -259,16 +267,19 @@ def _cleanup(max_age_h: float = 24):
 def main():
     import uvicorn
     ap = argparse.ArgumentParser(prog="unmark-ui")
-    ap.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to let other devices on your network use it")
     ap.add_argument("--port", type=int, default=7860)
+    ap.add_argument("--lan", action="store_true", help="let anyone on your Wi-Fi/LAN use it (no login)")
     ap.add_argument("--no-browser", action="store_true")
     a = ap.parse_args()
     _cleanup()
     log.info("Device: %s (%s), encoder: %s", hw.device_name(), hw.device(), hw.encoder("h264"))
-    allowed_hosts.add("*" if a.host in ("0.0.0.0", "::") else a.host)
-    if a.host not in ("127.0.0.1", "localhost"):
-        log.warning("Listening on %s: anyone on your network can upload videos to this machine.", a.host)
-    url = f"http://127.0.0.1:{a.port}"
+    host, url = "127.0.0.1", f"http://127.0.0.1:{a.port}"
+    if a.lan:
+        ip, name = lan_ip(), socket.gethostname().removesuffix(".local") + ".local"
+        allowed_hosts.update({ip, name.lower()})
+        host = "0.0.0.0"
+        log.warning("Shared on your network: anyone on this Wi-Fi can upload. Open http://%s:%d (or http://%s:%d)",
+                    ip, a.port, name, a.port)
     if not a.no_browser:
         threading.Timer(1.2, webbrowser.open, [url]).start()
-    uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
+    uvicorn.run(app, host=host, port=a.port, log_level="warning")

@@ -28,8 +28,8 @@ The AI model (Big-LaMa, 196 MB, md5-verified) downloads to `~/.cache/unmark` on 
 ## Web app
 
 ```bash
-uv run unmark-ui                     # opens http://127.0.0.1:7860
-uv run unmark-ui --host 0.0.0.0      # let other devices on your network use it
+uv run unmark-ui                     # opens http://127.0.0.1:7860 (this computer only)
+uv run unmark-ui --lan               # also reachable by anyone on your Wi-Fi at http://<your-ip>:7860
 ```
 
 Drop a video, and Unmark detects the watermark and starts removing it. You get live progress (frames, speed,
@@ -39,7 +39,9 @@ drag on the frame to mark anything missed, or render a 5-second preview with a b
 Videos are rendered one at a time; extra uploads queue. Results are saved to `~/Movies/Unmark` (macOS) or
 `~/Videos/Unmark`.
 
-> `--host 0.0.0.0` has no login: anyone on your network can upload. Use it only on networks you trust.
+By default the server only listens on `127.0.0.1`. With `--lan` anyone on the same Wi-Fi can upload and
+render (there is no login), so use it on your home network, not public Wi-Fi. Either way, requests from other
+websites and unknown host names are rejected. On macOS, click **Allow** if the firewall asks about incoming connections.
 
 ## CLI
 
